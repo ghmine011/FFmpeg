@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: FFmpeg/FFmpeg
-          ref: n8.0.1  # 最新穩定版 (2025-11-20)
+          ref: n8.0.1
           fetch-depth: 1
 
       - name: Install dependencies (nasm required)
@@ -40,20 +40,16 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
-          echo "✓ Configuration completed"
 
       - name: Verify config.mak generated
         run: |
           set -e
           if [ ! -f ffbuild/config.mak ]; then
             echo "❌ ffbuild/config.mak not generated! Configure silently failed."
-            echo "=== Last 100 lines of configure.log ==="
             tail -100 configure.log
-            echo "=== Last 100 lines of ffbuild/config.log ==="
-            tail -100 ffbuild/config.log || echo "ffbuild/config.log missing"
+            tail -100 ffbuild/config.log || true
             exit 1
           fi
-          echo "✓ ffbuild/config.mak generated successfully"
 
       - name: Upload configure logs on failure
         if: failure()
