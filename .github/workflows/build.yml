@@ -1,3 +1,4 @@
+
 name: FFmpeg Cross-Platform Build
 
 on:
@@ -11,6 +12,7 @@ on:
 
 env:
   FFMPEG_VERSION: '6.0'
+  BUILD_FLAGS: '--enable-nonfree --enable-gpl --enable-version3'
 
 jobs:
   build-linux:
@@ -19,13 +21,17 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, arm64]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             yasm \
             pkg-config \
@@ -37,19 +43,31 @@ jobs:
             libtheora-dev \
             libfdk-aac-dev \
             libmp3lame-dev \
-            libfreetype6-dev
+            libfreetype6-dev \
+            wget \
+            ca-certificates
+          echo "✓ Dependencies installed successfully"
       
       - name: Download FFmpeg source
         run: |
-          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
-          tar -xjf ffmpeg-snapshot.tar.bz2
+          set -e
+          echo "Downloading FFmpeg source..."
+          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
+            wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
+          tar -xjf ffmpeg-*.tar.bz2
+          mv ffmpeg-* ffmpeg
+          echo "✓ FFmpeg source extracted"
       
       - name: Configure FFmpeg
         run: |
+          set -e
           cd ffmpeg
+          echo "Configuring FFmpeg with architecture: ${{ matrix.arch }}"
+          
           ./configure \
             --prefix=/usr/local \
-            --enable-gpl \
+            --arch=${{ matrix.arch }} \
+            ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
             --enable-libvpx \
@@ -61,19 +79,50 @@ jobs:
             --enable-libfreetype \
             --enable-shared \
             --enable-pic \
-            --enable-version3
+            --disable-stripping \
+            2>&1 | tee configure.log
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Configure failed. Log:"
+            tail -50 configure.log
+            exit 1
+          fi
+          echo "✓ Configuration completed"
       
       - name: Build FFmpeg
         run: |
+          set -e
           cd ffmpeg
-          make -j$(nproc)
-          sudo make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          echo "Building FFmpeg (using $(nproc) cores)..."
+          make -j$(nproc) 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+          echo "✓ Build completed"
       
-      - name: Create artifacts directory
+      - name: Install FFmpeg
         run: |
+          set -e
+          cd ffmpeg
+          mkdir -p "${GITHUB_WORKSPACE}/build-output"
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          echo "✓ Installation completed"
+      
+      - name: Create artifacts
+        run: |
+          set -e
           mkdir -p artifacts
-          cd build-output
-          tar -czf ../artifacts/ffmpeg-linux-${{ matrix.arch }}.tar.gz . || echo "Build output is empty"
+          
+          if [ -d "${GITHUB_WORKSPACE}/build-output" ] && [ -n "$(find ${GITHUB_WORKSPACE}/build-output -type f)" ]; then
+            cd "${GITHUB_WORKSPACE}/build-output"
+            tar -czf "../artifacts/ffmpeg-linux-${{ matrix.arch }}.tar.gz" .
+            echo "✓ Linux ${{ matrix.arch }} artifact created"
+          else
+            echo "❌ Build output is empty"
+            exit 1
+          fi
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -81,8 +130,7 @@ jobs:
           name: ffmpeg-linux-${{ matrix.arch }}
           path: artifacts/ffmpeg-linux-${{ matrix.arch }}.tar.gz
           retention-days: 30
-          if-no-files-found: warn
-        continue-on-error: true
+          if-no-files-found: error
 
   build-macos:
     name: Build on macOS
@@ -90,24 +138,47 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, arm64]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       
       - name: Install dependencies
         run: |
-          brew install yasm x264 x265 libvpx opus libvorbis theora libfdk-aac lame freetype
+          set -e
+          echo "Installing dependencies via Homebrew..."
+          
+          # Update Homebrew
+          brew update -q 2>/dev/null || true
+          
+          # Install required packages
+          brew install -q yasm x264 x265 libvpx opus libvorbis theora fdk-aac lame freetype pkg-config || true
+          
+          echo "✓ Dependencies installed"
       
       - name: Download FFmpeg source
         run: |
-          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
-          tar -xjf ffmpeg-snapshot.tar.bz2
+          set -e
+          echo "Downloading FFmpeg source..."
+          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
+            curl -sL https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2 -o ffmpeg-snapshot.tar.bz2
+          tar -xjf ffmpeg-*.tar.bz2
+          mv ffmpeg-* ffmpeg
+          echo "✓ FFmpeg source extracted"
       
       - name: Configure FFmpeg
         run: |
+          set -e
           cd ffmpeg
+          echo "Configuring FFmpeg for macOS (${{ matrix.arch }})..."
+          
+          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
+          
           ./configure \
             --prefix=/usr/local \
-            --enable-gpl \
+            --arch=${{ matrix.arch }} \
+            ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
             --enable-libvpx \
@@ -118,19 +189,50 @@ jobs:
             --enable-libmp3lame \
             --enable-libfreetype \
             --enable-shared \
-            --arch=${{ matrix.arch }}
+            --disable-stripping \
+            2>&1 | tee configure.log
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Configure failed. Log:"
+            tail -50 configure.log
+            exit 1
+          fi
+          echo "✓ Configuration completed"
       
       - name: Build FFmpeg
         run: |
+          set -e
           cd ffmpeg
-          make -j$(sysctl -n hw.logicalcpu)
-          sudo make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          echo "Building FFmpeg (using $(sysctl -n hw.logicalcpu) cores)..."
+          make -j$(sysctl -n hw.logicalcpu) 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+          echo "✓ Build completed"
       
-      - name: Create artifacts directory
+      - name: Install FFmpeg
         run: |
+          set -e
+          cd ffmpeg
+          mkdir -p "${GITHUB_WORKSPACE}/build-output"
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          echo "✓ Installation completed"
+      
+      - name: Create artifacts
+        run: |
+          set -e
           mkdir -p artifacts
-          cd build-output
-          tar -czf ../artifacts/ffmpeg-macos-${{ matrix.arch }}.tar.gz . || echo "Build output is empty"
+          
+          if [ -d "${GITHUB_WORKSPACE}/build-output" ] && [ -n "$(find ${GITHUB_WORKSPACE}/build-output -type f)" ]; then
+            cd "${GITHUB_WORKSPACE}/build-output"
+            tar -czf "../artifacts/ffmpeg-macos-${{ matrix.arch }}.tar.gz" .
+            echo "✓ macOS ${{ matrix.arch }} artifact created"
+          else
+            echo "❌ Build output is empty"
+            exit 1
+          fi
       
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -138,8 +240,7 @@ jobs:
           name: ffmpeg-macos-${{ matrix.arch }}
           path: artifacts/ffmpeg-macos-${{ matrix.arch }}.tar.gz
           retention-days: 30
-          if-no-files-found: warn
-        continue-on-error: true
+          if-no-files-found: error
 
   build-windows:
     name: Build on Windows (MinGW)
@@ -147,8 +248,11 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, i686]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v4
@@ -156,9 +260,11 @@ jobs:
           msystem: MINGW64
           update: true
           install: |
+            base-devel
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
             mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-x264
             mingw-w64-x86_64-x265
             mingw-w64-x86_64-libvpx
@@ -167,45 +273,89 @@ jobs:
             mingw-w64-x86_64-libtheora
             mingw-w64-x86_64-lame
             mingw-w64-x86_64-freetype
+            mingw-w64-x86_64-fdk-aac
+            wget
       
       - name: Download FFmpeg source
         shell: msys2 {0}
         run: |
-          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
-          tar -xjf ffmpeg-snapshot.tar.bz2
+          set -e
+          echo "Downloading FFmpeg source..."
+          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
+            wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
+          tar -xjf ffmpeg-*.tar.bz2
+          mv ffmpeg-* ffmpeg
+          echo "✓ FFmpeg source extracted"
       
       - name: Configure FFmpeg
         shell: msys2 {0}
         run: |
+          set -e
           cd ffmpeg
+          echo "Configuring FFmpeg for Windows (${{ matrix.arch }})..."
+          
           ./configure \
             --prefix=/mingw64 \
-            --enable-gpl \
+            ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
             --enable-libvpx \
             --enable-libopus \
             --enable-libvorbis \
             --enable-libtheora \
+            --enable-libfdk-aac \
             --enable-libmp3lame \
             --enable-libfreetype \
-            --enable-shared
+            --enable-shared \
+            --disable-stripping \
+            2>&1 | tee configure.log
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Configure failed. Log:"
+            tail -50 configure.log
+            exit 1
+          fi
+          echo "✓ Configuration completed"
       
       - name: Build FFmpeg
         shell: msys2 {0}
         run: |
-          cd ffmpeg
-          make -j$(nproc)
-          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          set -e
+          echo "Building FFmpeg (using $(nproc) cores)..."
+          make -j$(nproc) 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Build failed"
+            exit 1
+          fi
+          echo "✓ Build completed"
       
-      - name: Create artifacts directory
+      - name: Install FFmpeg
+        shell: msys2 {0}
+        run: |
+          set -e
+          mkdir -p "${GITHUB_WORKSPACE}/build-output"
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          echo "✓ Installation completed"
+      
+      - name: Create artifacts
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          
           if (Test-Path "build-output") {
-            mkdir -p artifacts -Force
-            Compress-Archive -Path build-output\* -DestinationPath artifacts\ffmpeg-windows-${{ matrix.arch }}.zip -Force
+            $files = Get-ChildItem -Path "build-output" -Recurse -File
+            if ($files.Count -gt 0) {
+              mkdir -p "artifacts" -Force | Out-Null
+              Compress-Archive -Path "build-output\*" -DestinationPath "artifacts\ffmpeg-windows-${{ matrix.arch }}.zip" -Force
+              Write-Host "✓ Windows ${{ matrix.arch }} artifact created"
+            } else {
+              Write-Host "❌ Build output is empty"
+              exit 1
+            }
           } else {
-            Write-Host "Build output directory not found"
+            Write-Host "❌ Build output directory not found"
+            exit 1
           }
       
       - name: Upload Windows artifacts
@@ -214,8 +364,7 @@ jobs:
           name: ffmpeg-windows-${{ matrix.arch }}
           path: artifacts/ffmpeg-windows-${{ matrix.arch }}.zip
           retention-days: 30
-          if-no-files-found: warn
-        continue-on-error: true
+          if-no-files-found: error
 
   create-release:
     name: Create GitHub Release
@@ -229,19 +378,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-        continue-on-error: true
       
       - name: Prepare release files
         run: |
+          set -e
           mkdir -p release
-          if [ -d "artifacts" ] && [ "$(ls -A artifacts)" ]; then
+          
+          if [ -d "artifacts" ] && [ -n "$(find artifacts -type f)" ]; then
             find artifacts -type f -exec cp {} release/ \;
+            echo "✓ Release files prepared"
+            echo "=== Release Files ==="
+            ls -lah release/
           else
-            echo "No artifacts found"
+            echo "❌ No artifacts found"
+            exit 1
           fi
-          echo "=== Release Files ==="
-          ls -lah release/ || echo "Release directory is empty"
-        continue-on-error: true
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -252,7 +403,6 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
   verify-all:
     name: Verify Build Artifacts
@@ -264,7 +414,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: all-artifacts
-        continue-on-error: true
       
       - name: List all downloaded files
         run: |
@@ -273,85 +422,113 @@ jobs:
             find all-artifacts -type f -exec ls -lh {} \;
             echo ""
             echo "=== Directory Structure ==="
-            tree all-artifacts -L 3 || find all-artifacts -type d
+            find all-artifacts -type d | sort
           else
-            echo "No artifacts directory found"
+            echo "⚠ No artifacts directory found"
           fi
-        continue-on-error: true
       
       - name: Verify Linux builds
         run: |
+          set +e
           echo "=== Linux Build Verification ==="
-          if [ -f "all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz" ]; then
-            echo "✓ Linux x86_64 build found"
-            tar -tzf all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz | head -10
-          else
-            echo "⚠ Linux x86_64 build not found"
-          fi
           
-          if [ -f "all-artifacts/ffmpeg-linux-arm64/ffmpeg-linux-arm64.tar.gz" ]; then
-            echo "✓ Linux ARM64 build found"
-            tar -tzf all-artifacts/ffmpeg-linux-arm64/ffmpeg-linux-arm64.tar.gz | head -10
-          else
-            echo "⚠ Linux ARM64 build not found"
-          fi
-        continue-on-error: true
+          for arch in x86_64 arm64; do
+            artifact="all-artifacts/ffmpeg-linux-${arch}/ffmpeg-linux-${arch}.tar.gz"
+            if [ -f "$artifact" ]; then
+              size=$(du -h "$artifact" | cut -f1)
+              echo "✓ Linux ${arch} build found (${size})"
+              tar -tzf "$artifact" 2>/dev/null | head -5
+            else
+              echo "⚠ Linux ${arch} build not found"
+            fi
+          done
       
       - name: Verify macOS builds
         run: |
+          set +e
           echo "=== macOS Build Verification ==="
-          if [ -f "all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz" ]; then
-            echo "✓ macOS x86_64 build found"
-            tar -tzf all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz | head -10
-          else
-            echo "⚠ macOS x86_64 build not found"
-          fi
           
-          if [ -f "all-artifacts/ffmpeg-macos-arm64/ffmpeg-macos-arm64.tar.gz" ]; then
-            echo "✓ macOS ARM64 build found"
-            tar -tzf all-artifacts/ffmpeg-macos-arm64/ffmpeg-macos-arm64.tar.gz | head -10
-          else
-            echo "⚠ macOS ARM64 build not found"
-          fi
-        continue-on-error: true
+          for arch in x86_64 arm64; do
+            artifact="all-artifacts/ffmpeg-macos-${arch}/ffmpeg-macos-${arch}.tar.gz"
+            if [ -f "$artifact" ]; then
+              size=$(du -h "$artifact" | cut -f1)
+              echo "✓ macOS ${arch} build found (${size})"
+              tar -tzf "$artifact" 2>/dev/null | head -5
+            else
+              echo "⚠ macOS ${arch} build not found"
+            fi
+          done
       
       - name: Verify Windows builds
         run: |
+          set +e
           echo "=== Windows Build Verification ==="
-          if [ -f "all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip" ]; then
-            echo "✓ Windows x86_64 build found"
-            unzip -l all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip | head -15
-          else
-            echo "⚠ Windows x86_64 build not found"
-          fi
           
-          if [ -f "all-artifacts/ffmpeg-windows-i686/ffmpeg-windows-i686.zip" ]; then
-            echo "✓ Windows i686 build found"
-            unzip -l all-artifacts/ffmpeg-windows-i686/ffmpeg-windows-i686.zip | head -15
-          else
-            echo "⚠ Windows i686 build not found"
-          fi
-        continue-on-error: true
+          for arch in x86_64 i686; do
+            artifact="all-artifacts/ffmpeg-windows-${arch}/ffmpeg-windows-${arch}.zip"
+            if [ -f "$artifact" ]; then
+              size=$(du -h "$artifact" | cut -f1)
+              echo "✓ Windows ${arch} build found (${size})"
+              unzip -l "$artifact" 2>/dev/null | head -10
+            else
+              echo "⚠ Windows ${arch} build not found"
+            fi
+          done
       
       - name: Generate summary report
         run: |
-          echo "## Build Verification Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Artifact Status" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -d "all-artifacts" ]; then
-            total_files=$(find all-artifacts -type f | wc -l)
-            total_size=$(du -sh all-artifacts | cut -f1)
-            echo "- **Total artifacts**: $total_files files" >> $GITHUB_STEP_SUMMARY
-            echo "- **Total size**: $total_size" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Total artifacts**: 0 files" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Platform Status" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux: $([ -d 'all-artifacts/ffmpeg-linux-x86_64' ] && echo '✓' || echo '✗')" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS: $([ -d 'all-artifacts/ffmpeg-macos-x86_64' ] && echo '✓' || echo '✗')" >> $GITHUB_STEP_SUMMARY
-          echo "- Windows: $([ -d 'all-artifacts/ffmpeg-windows-x86_64' ] && echo '✓' || echo '✗')" >> $GITHUB_STEP_SUMMARY
-        continue-on-error: true
+          {
+            echo "## 📊 Build Verification Report"
+            echo ""
+            echo "### 📦 Artifact Status"
+            echo ""
+            
+            if [ -d "all-artifacts" ]; then
+              total_files=$(find all-artifacts -type f | wc -l)
+              total_size=$(du -sh all-artifacts | cut -f1)
+              echo "- **Total artifacts**: $total_files files"
+              echo "- **Total size**: $total_size"
+            else
+              echo "- **Total artifacts**: 0 files ❌"
+            fi
+            
+            echo ""
+            echo "### 🖥️ Platform Build Status"
+            echo ""
+            
+            platforms=(
+              "Linux:all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz"
+              "macOS:all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz"
+              "Windows:all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip"
+            )
+            
+            for platform_info in "${platforms[@]}"; do
+              platform="${platform_info%%:*}"
+              artifact="${platform_info##*:}"
+              
+              if [ -f "$artifact" ]; then
+                size=$(du -h "$artifact" | cut -f1)
+                echo "- **$platform**: ✅ ($size)"
+              else
+                echo "- **$platform**: ❌ (artifact not found)"
+              fi
+            done
+            
+            echo ""
+            echo "### 🏗️ Architecture Support"
+            echo ""
+            echo "| Platform | x86_64 | ARM64 | i686 |"
+            echo "|----------|--------|-------|------|"
+            
+            linux_x86=$([ -f "all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz" ] && echo "✅" || echo "❌")
+            linux_arm=$([ -f "all-artifacts/ffmpeg-linux-arm64/ffmpeg-linux-arm64.tar.gz" ] && echo "✅" || echo "❌")
+            macos_x86=$([ -f "all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz" ] && echo "✅" || echo "❌")
+            macos_arm=$([ -f "all-artifacts/ffmpeg-macos-arm64/ffmpeg-macos-arm64.tar.gz" ] && echo "✅" || echo "❌")
+            win_x86=$([ -f "all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip" ] && echo "✅" || echo "❌")
+            win_i686=$([ -f "all-artifacts/ffmpeg-windows-i686/ffmpeg-windows-i686.zip" ] && echo "✅" || echo "❌")
+            
+            echo "| Linux    | $linux_x86 | $linux_arm | - |"
+            echo "| macOS    | $macos_x86 | $macos_arm | - |"
+            echo "| Windows  | $win_x86 | - | $win_i686 |"
+            
+          } >> $GITHUB_STEP_SUMMARY
