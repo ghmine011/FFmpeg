@@ -28,7 +28,6 @@ jobs:
             build-essential nasm pkg-config \
             libx264-dev libx265-dev libopus-dev libvorbis-dev \
             libfdk-aac-dev libmp3lame-dev ca-certificates
-          echo "✓ Dependencies installed (nasm: $(nasm -v))"
 
       - name: Configure FFmpeg
         run: |
@@ -45,7 +44,7 @@ jobs:
         run: |
           set -e
           if [ ! -f ffbuild/config.mak ]; then
-            echo "❌ ffbuild/config.mak not generated! Configure silently failed."
+            echo "❌ ffbuild/config.mak not generated!"
             tail -100 configure.log
             tail -100 ffbuild/config.log || true
             exit 1
