@@ -17,10 +17,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: FFmpeg/FFmpeg
-          ref: n8.0.1        # 官方穩定 tag
+          ref: n8.0.1  # 最新穩定版 (2025-11-20)
           fetch-depth: 1
 
-      - name: Install dependencies (including nasm)
+      - name: Install dependencies (nasm required)
         run: |
           set -e
           sudo apt-get update -qq
@@ -28,7 +28,7 @@ jobs:
             build-essential nasm pkg-config \
             libx264-dev libx265-dev libopus-dev libvorbis-dev \
             libfdk-aac-dev libmp3lame-dev ca-certificates
-          echo "✓ Dependencies installed (nasm version: $(nasm -v))"
+          echo "✓ Dependencies installed (nasm: $(nasm -v))"
 
       - name: Configure FFmpeg
         run: |
@@ -42,34 +42,41 @@ jobs:
             2>&1 | tee configure.log
           echo "✓ Configuration completed"
 
-      - name: Diagnose configure failure (if any)
+      - name: Upload configure logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-configure-logs
+          path: |
+            configure.log
+            ffbuild/config.log
+
+      - name: Diagnose external libraries on failure
         if: failure()
         run: |
-          echo "=== configure.log last 100 lines ==="
-          tail -100 configure.log
-          echo ""
-          echo "=== ffbuild/config.log last 100 lines (most important) ==="
-          tail -100 ffbuild/config.log || echo "ffbuild/config.log not found"
-          exit 1
+          echo "=== pkg-config check ==="
+          pkg-config --modversion libx264 || echo "libx264 missing"
+          pkg-config --modversion libx265 || echo "libx265 missing"
+          pkg-config --modversion libfdk_aac || echo "libfdk_aac missing"
+          pkg-config --modversion lame || echo "lame missing"
+          echo "=== ffbuild/config.log tail ==="
+          tail -100 ffbuild/config.log || true
 
       - name: Build & Install
         run: |
           set -e
           make -j$(nproc)
-          BUILD_OUTPUT_DIR="${{ github.workspace }}/build-output"
-          mkdir -p "${BUILD_OUTPUT_DIR}"
-          make install DESTDIR="${BUILD_OUTPUT_DIR}"
-          echo "BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR}" >> $GITHUB_ENV
+          mkdir -p build-output
+          make install DESTDIR="${{ github.workspace }}/build-output"
 
       - name: Create artifact & checksum
         run: |
           set -e
           mkdir -p artifacts
-          cd "${BUILD_OUTPUT_DIR}"
+          cd build-output
           tar -czf "${{ github.workspace }}/artifacts/ffmpeg-linux-x86_64.tar.gz" .
           cd "${{ github.workspace }}/artifacts"
           sha256sum ffmpeg-linux-x86_64.tar.gz > ffmpeg-linux-x86_64.tar.gz.sha256
-          echo "✓ Artifact created"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -89,11 +96,11 @@ jobs:
           ref: n8.0.1
           fetch-depth: 1
 
-      - name: Install dependencies (including nasm)
+      - name: Install dependencies (nasm required)
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
-          echo "✓ Dependencies installed (nasm version: $(nasm -v))"
+          echo "✓ Dependencies installed (nasm: $(nasm -v))"
 
       - name: Configure FFmpeg
         run: |
@@ -108,26 +115,27 @@ jobs:
             2>&1 | tee configure.log
           echo "✓ Configuration completed"
 
-      - name: Diagnose configure failure (if any)
+      - name: Upload configure logs on failure
         if: failure()
-        run: |
-          tail -100 configure.log
-          tail -100 ffbuild/config.log || true
-          exit 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64-configure-logs
+          path: |
+            configure.log
+            ffbuild/config.log
 
       - name: Build & Install
         run: |
           set -e
           make -j$(sysctl -n hw.logicalcpu)
-          BUILD_OUTPUT_DIR="${{ github.workspace }}/build-output"
-          mkdir -p "${BUILD_OUTPUT_DIR}"
-          make install DESTDIR="${BUILD_OUTPUT_DIR}"
+          mkdir -p build-output
+          make install DESTDIR="${{ github.workspace }}/build-output"
 
       - name: Create artifact & checksum
         run: |
           set -e
           mkdir -p artifacts
-          cd "${BUILD_OUTPUT_DIR}"
+          cd build-output
           tar -czf "${{ github.workspace }}/artifacts/ffmpeg-macos-x86_64.tar.gz" .
           cd "${{ github.workspace }}/artifacts"
           shasum -a 256 ffmpeg-macos-x86_64.tar.gz > ffmpeg-macos-x86_64.tar.gz.sha256
@@ -144,14 +152,13 @@ jobs:
     name: Build on macOS (arm64)
     runs-on: macos-14
     steps:
-      # 步驟與 x86_64 完全相同（runner 會自動使用 arm64）
       - uses: actions/checkout@v4
         with:
           repository: FFmpeg/FFmpeg
           ref: n8.0.1
           fetch-depth: 1
 
-      - name: Install dependencies (including nasm)
+      - name: Install dependencies (nasm required)
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
@@ -168,26 +175,27 @@ jobs:
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
 
-      - name: Diagnose configure failure (if any)
+      - name: Upload configure logs on failure
         if: failure()
-        run: |
-          tail -100 configure.log
-          tail -100 ffbuild/config.log || true
-          exit 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-configure-logs
+          path: |
+            configure.log
+            ffbuild/config.log
 
       - name: Build & Install
         run: |
           set -e
           make -j$(sysctl -n hw.logicalcpu)
-          BUILD_OUTPUT_DIR="${{ github.workspace }}/build-output"
-          mkdir -p "${BUILD_OUTPUT_DIR}"
-          make install DESTDIR="${BUILD_OUTPUT_DIR}"
+          mkdir -p build-output
+          make install DESTDIR="${{ github.workspace }}/build-output"
 
       - name: Create artifact & checksum
         run: |
           set -e
           mkdir -p artifacts
-          cd "${BUILD_OUTPUT_DIR}"
+          cd build-output
           tar -czf "${{ github.workspace }}/artifacts/ffmpeg-macos-arm64.tar.gz" .
           cd "${{ github.workspace }}/artifacts"
           shasum -a 256 ffmpeg-macos-arm64.tar.gz > ffmpeg-macos-arm64.tar.gz.sha256
@@ -235,13 +243,15 @@ jobs:
             2>&1 | tee configure.log
           echo "✓ Configuration completed"
 
-      - name: Diagnose configure failure (if any)
+      - name: Upload configure logs on failure
         if: failure()
         shell: msys2 {0}
-        run: |
-          tail -100 configure.log
-          tail -100 ffbuild/config.log || true
-          exit 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-configure-logs
+          path: |
+            configure.log
+            ffbuild/config.log
 
       - name: Build & Install
         shell: msys2 {0}
