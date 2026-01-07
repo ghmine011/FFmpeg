@@ -97,11 +97,11 @@ jobs:
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
       - name: Configure FFmpeg
         run: |
           set -e
-          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
           ./configure \
             --prefix=/usr/local \
             --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
@@ -167,11 +167,11 @@ jobs:
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
       - name: Configure FFmpeg
         run: |
           set -e
-          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
           ./configure \
             --prefix=/usr/local \
             --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
