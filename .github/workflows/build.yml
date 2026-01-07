@@ -50,8 +50,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: linux-configure-logs
@@ -120,8 +120,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: macos-x86_64-configure-logs
@@ -190,8 +190,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-configure-logs
@@ -268,8 +268,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-configure-logs
