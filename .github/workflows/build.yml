@@ -1,0 +1,40 @@
+name: Build FFmpeg
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential yasm nasm pkg-config \
+            libx264-dev libx265-dev libvpx-dev libfdk-aac-dev \
+            libmp3lame-dev libopus-dev libssl-dev
+      
+      - name: Configure
+        run: |
+          ./configure --prefix=/usr/local \
+            --enable-gpl --enable-nonfree \
+            --enable-libx264 --enable-libx265 \
+            --enable-libvpx --enable-libfdk-aac \
+            --enable-libmp3lame --enable-libopus
+      
+      - name: Build
+        run: make -j$(nproc)
+      
+      - name: Package
+        run: |
+          make install DESTDIR=./release
+          tar -czvf ffmpeg-linux-x64.tar.gz -C ./release .
+      
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ffmpeg-linux-x64.tar.gz
