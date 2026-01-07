@@ -42,6 +42,19 @@ jobs:
             2>&1 | tee configure.log
           echo "✓ Configuration completed"
 
+      - name: Verify config.mak generated
+        run: |
+          set -e
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated! Configure silently failed."
+            echo "=== Last 100 lines of configure.log ==="
+            tail -100 configure.log
+            echo "=== Last 100 lines of ffbuild/config.log ==="
+            tail -100 ffbuild/config.log || echo "ffbuild/config.log missing"
+            exit 1
+          fi
+          echo "✓ ffbuild/config.mak generated successfully"
+
       - name: Upload configure logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -50,17 +63,6 @@ jobs:
           path: |
             configure.log
             ffbuild/config.log
-
-      - name: Diagnose external libraries on failure
-        if: failure()
-        run: |
-          echo "=== pkg-config check ==="
-          pkg-config --modversion libx264 || echo "libx264 missing"
-          pkg-config --modversion libx265 || echo "libx265 missing"
-          pkg-config --modversion libfdk_aac || echo "libfdk_aac missing"
-          pkg-config --modversion lame || echo "lame missing"
-          echo "=== ffbuild/config.log tail ==="
-          tail -100 ffbuild/config.log || true
 
       - name: Build & Install
         run: |
@@ -100,7 +102,6 @@ jobs:
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
-          echo "✓ Dependencies installed (nasm: $(nasm -v))"
 
       - name: Configure FFmpeg
         run: |
@@ -113,7 +114,16 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
-          echo "✓ Configuration completed"
+
+      - name: Verify config.mak generated
+        run: |
+          set -e
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            tail -100 ffbuild/config.log || true
+            exit 1
+          fi
 
       - name: Upload configure logs on failure
         if: failure()
@@ -174,6 +184,16 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
+
+      - name: Verify config.mak generated
+        run: |
+          set -e
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            tail -100 ffbuild/config.log || true
+            exit 1
+          fi
 
       - name: Upload configure logs on failure
         if: failure()
@@ -241,7 +261,17 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
-          echo "✓ Configuration completed"
+
+      - name: Verify config.mak generated
+        shell: msys2 {0}
+        run: |
+          set -e
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            tail -100 ffbuild/config.log || true
+            exit 1
+          fi
 
       - name: Upload configure logs on failure
         if: failure()
@@ -286,18 +316,29 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Prepare release files
         run: |
+          set -e
           mkdir -p release
           find artifacts -type f -exec cp {} release/ \;
+          echo "✓ All artifacts prepared for release"
+          ls -lah release/
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          draft: false
+          prerelease: false
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   verify-all:
     name: Verify Build Artifacts
@@ -305,24 +346,41 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
           path: all-artifacts
-      - name: Generate summary
+
+      - name: Generate summary report
         run: |
           echo "## 📊 Build Verification Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🖥️ Platform Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           platforms=(
             "ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz"
             "ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz"
             "ffmpeg-macos-arm64/ffmpeg-macos-arm64.tar.gz"
             "ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.tar.gz"
           )
-          for p in "${platforms[@]}"; do
-            if [ -f "all-artifacts/$p" ]; then
-              size=$(du -h "all-artifacts/$p" | cut -f1)
-              echo "- **$(basename $p)**: ✅ (${size})" >> $GITHUB_STEP_SUMMARY
+
+          for artifact in "${platforms[@]}"; do
+            if [ -f "all-artifacts/$artifact" ]; then
+              size=$(du -h "all-artifacts/$artifact" | cut -f1)
+              echo "- **$(basename $artifact)**: ✅ Found (${size})" >> $GITHUB_STEP_SUMMARY
             else
-              echo "- **$(basename $p)**: ❌ Missing" >> $GITHUB_STEP_SUMMARY
+              echo "- **$(basename $artifact)**: ❌ Missing" >> $GITHUB_STEP_SUMMARY
             fi
           done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Total Artifacts" >> $GITHUB_STEP_SUMMARY
+          if [ -d "all-artifacts" ]; then
+            total_files=$(find all-artifacts -type f | wc -l)
+            total_size=$(du -sh all-artifacts | cut -f1)
+            echo "- **Files**: $total_files" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total size**: $total_size" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Files**: 0 ❌" >> $GITHUB_STEP_SUMMARY
+          fi
