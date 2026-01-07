@@ -21,16 +21,14 @@ jobs:
           ref: n8.0.1
           fetch-depth: 1
 
-      - name: Install dependencies
-        run: |
+      - run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             build-essential nasm pkg-config \
             libx264-dev libx265-dev libopus-dev libvorbis-dev \
             libfdk-aac-dev libmp3lame-dev ca-certificates
 
-      - name: Configure FFmpeg
-        run: |
+      - run: |
           ./configure \
             --prefix=/usr/local \
             --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
@@ -39,14 +37,19 @@ jobs:
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
 
-      - name: Build & Install
-        run: |
+      - run: |
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            exit 1
+          fi
+
+      - run: |
           make -j$(nproc --ignore=1)
           mkdir -p build-output
           make install DESTDIR="${{ github.workspace }}/build-output"
 
-      - name: Package artifact
-        run: |
+      - run: |
           mkdir -p artifacts
           cd build-output
           tar -czf "${{ github.workspace }}/artifacts/ffmpeg-linux-x86_64.tar.gz" .
@@ -78,6 +81,13 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
+
+      - run: |
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            exit 1
+          fi
 
       - run: |
           make -j$(sysctl -n hw.logicalcpu)
@@ -116,6 +126,13 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
+
+      - run: |
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            exit 1
+          fi
 
       - run: |
           make -j$(sysctl -n hw.logicalcpu)
@@ -172,6 +189,15 @@ jobs:
             --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
+
+      - name: Verify config.mak generated
+        shell: msys2 {0}
+        run: |
+          if [ ! -f ffbuild/config.mak ]; then
+            echo "❌ ffbuild/config.mak not generated!"
+            tail -100 configure.log
+            exit 1
+          fi
 
       - name: Build & Install
         shell: msys2 {0}
