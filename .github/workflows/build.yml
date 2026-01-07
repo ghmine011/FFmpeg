@@ -10,47 +10,10 @@ on:
     - cron: '0 0 * * 0'  # Weekly build
 
 jobs:
-  build:
-    name: Build FFmpeg (${{ matrix.os }}-${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x86_64
-            pkg_install: |
-              sudo apt-get update -qq
-              sudo apt-get install -y --no-install-recommends \
-                build-essential nasm pkg-config \
-                libx264-dev libx265-dev libopus-dev libvorbis-dev \
-                libfdk-aac-dev libmp3lame-dev ca-certificates
-            make_cmd: make -j$(nproc)
-            checksum_cmd: sha256sum
-          - os: macos-latest
-            arch: x86_64
-            pkg_install: brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
-            make_cmd: make -j$(sysctl -n hw.logicalcpu)
-            checksum_cmd: shasum -a 256
-          - os: macos-14
-            arch: arm64
-            pkg_install: brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
-            make_cmd: make -j$(sysctl -n hw.logicalcpu)
-            checksum_cmd: shasum -a 256
-          - os: windows-latest
-            arch: x86_64
-            pkg_install: |
-              msys2/setup-msys2@v2
-              msystem: MINGW64
-              update: true
-              install: >
-                base-devel mingw-w64-x86_64-gcc mingw-w64-x86_64-make
-                mingw-w64-x86_64-nasm mingw-w64-x86_64-pkg-config
-                mingw-w64-x86_64-x264 mingw-w64-x86_64-x265
-                mingw-w64-x86_64-opus mingw-w64-x86_64-libvorbis
-                mingw-w64-x86_64-lame mingw-w64-x86_64-fdk-aac
-            make_cmd: make -j$(nproc)
-            checksum_cmd: sha256sum
-
+  build-linux:
+    name: Build on Linux (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +22,12 @@ jobs:
           fetch-depth: 1
 
       - name: Install dependencies
-        run: ${{ matrix.pkg_install }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential nasm pkg-config \
+            libx264-dev libx265-dev libopus-dev libvorbis-dev \
+            libfdk-aac-dev libmp3lame-dev ca-certificates
 
       - name: Configure FFmpeg
         run: |
@@ -71,31 +39,157 @@ jobs:
             --enable-shared --disable-stripping \
             2>&1 | tee configure.log
 
-      - name: Verify config.mak generated
-        run: |
-          if [ ! -f ffbuild/config.mak ]; then
-            echo "❌ ffbuild/config.mak not generated!"
-            tail -100 configure.log
-            tail -100 ffbuild/config.log || true
-            exit 1
-          fi
-
       - name: Build & Install
         run: |
-          ${{ matrix.make_cmd }}
+          make -j$(nproc --ignore=1)
           mkdir -p build-output
           make install DESTDIR="${{ github.workspace }}/build-output"
 
-      - name: Create artifact & checksum
+      - name: Package artifact
         run: |
           mkdir -p artifacts
           cd build-output
-          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" .
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-linux-x86_64.tar.gz" .
           cd "${{ github.workspace }}/artifacts"
-          ${{ matrix.checksum_cmd }} ffmpeg-${{ matrix.os }}-${{ matrix.arch }}.tar.gz > ffmpeg-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
+          sha256sum ffmpeg-linux-x86_64.tar.gz > ffmpeg-linux-x86_64.tar.gz.sha256
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-${{ matrix.os }}-${{ matrix.arch }}
+          name: ffmpeg-linux-x86_64
+          path: artifacts/*
+
+  build-macos-x86_64:
+    name: Build on macOS (x86_64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: n8.0.1
+          fetch-depth: 1
+
+      - run: brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+
+      - run: |
+          ./configure \
+            --prefix=/usr/local \
+            --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
+            --enable-libx264 --enable-libx265 --enable-libopus \
+            --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
+            --enable-shared --disable-stripping \
+            2>&1 | tee configure.log
+
+      - run: |
+          make -j$(sysctl -n hw.logicalcpu)
+          mkdir -p build-output
+          make install DESTDIR="${{ github.workspace }}/build-output"
+
+      - run: |
+          mkdir -p artifacts
+          cd build-output
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-macos-x86_64.tar.gz" .
+          cd "${{ github.workspace }}/artifacts"
+          shasum -a 256 ffmpeg-macos-x86_64.tar.gz > ffmpeg-macos-x86_64.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-macos-x86_64
+          path: artifacts/*
+
+  build-macos-arm64:
+    name: Build on macOS (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: n8.0.1
+          fetch-depth: 1
+
+      - run: brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+
+      - run: |
+          ./configure \
+            --prefix=/usr/local \
+            --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
+            --enable-libx264 --enable-libx265 --enable-libopus \
+            --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
+            --enable-shared --disable-stripping \
+            2>&1 | tee configure.log
+
+      - run: |
+          make -j$(sysctl -n hw.logicalcpu)
+          mkdir -p build-output
+          make install DESTDIR="${{ github.workspace }}/build-output"
+
+      - run: |
+          mkdir -p artifacts
+          cd build-output
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-macos-arm64.tar.gz" .
+          cd "${{ github.workspace }}/artifacts"
+          shasum -a 256 ffmpeg-macos-arm64.tar.gz > ffmpeg-macos-arm64.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-macos-arm64
+          path: artifacts/*
+
+  build-windows:
+    name: Build on Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: n8.0.1
+          fetch-depth: 1
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: |
+            base-devel
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-x264
+            mingw-w64-x86_64-x265
+            mingw-w64-x86_64-opus
+            mingw-w64-x86_64-libvorbis
+            mingw-w64-x86_64-lame
+            mingw-w64-x86_64-fdk-aac
+
+      - name: Configure FFmpeg
+        shell: msys2 {0}
+        run: |
+          ./configure \
+            --prefix=/mingw64 \
+            --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
+            --enable-libx264 --enable-libx265 --enable-libopus \
+            --enable-libvorbis --enable-libfdk-aac --enable-libmp3lame \
+            --enable-shared --disable-stripping \
+            2>&1 | tee configure.log
+
+      - name: Build & Install
+        shell: msys2 {0}
+        run: |
+          make -j$(nproc)
+          mkdir -p "${{ github.workspace }}/build-output"
+          make install DESTDIR="${{ github.workspace }}/build-output"
+
+      - name: Package artifact
+        shell: msys2 {0}
+        run: |
+          mkdir -p "${{ github.workspace }}/artifacts"
+          cd "${{ github.workspace }}/build-output"
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-windows-x86_64.tar.gz" .
+          cd "${{ github.workspace }}/artifacts"
+          sha256sum ffmpeg-windows-x86_64.tar.gz > ffmpeg-windows-x86_64.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-windows-x86_64
           path: artifacts/*
