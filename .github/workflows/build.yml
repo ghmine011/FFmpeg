@@ -1,4 +1,3 @@
-
 name: FFmpeg Cross-Platform Build
 
 on:
@@ -20,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86_64, arm64]
+        arch: [x86_64]
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -37,13 +36,10 @@ jobs:
             pkg-config \
             libx264-dev \
             libx265-dev \
-            libvpx-dev \
             libopus-dev \
             libvorbis-dev \
-            libtheora-dev \
             libfdk-aac-dev \
             libmp3lame-dev \
-            libfreetype6-dev \
             wget \
             ca-certificates
           echo "✓ Dependencies installed successfully"
@@ -52,8 +48,7 @@ jobs:
         run: |
           set -e
           echo "Downloading FFmpeg source..."
-          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
-            wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
+          wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
           tar -xjf ffmpeg-*.tar.bz2
           mv ffmpeg-* ffmpeg
           echo "✓ FFmpeg source extracted"
@@ -70,15 +65,11 @@ jobs:
             ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
-            --enable-libvpx \
             --enable-libopus \
             --enable-libvorbis \
-            --enable-libtheora \
             --enable-libfdk-aac \
             --enable-libmp3lame \
-            --enable-libfreetype \
             --enable-shared \
-            --enable-pic \
             --disable-stripping \
             2>&1 | tee configure.log
           
@@ -137,7 +128,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        arch: [x86_64, arm64]
+        arch: [x86_64]
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -149,11 +140,7 @@ jobs:
           set -e
           echo "Installing dependencies via Homebrew..."
           
-          # Update Homebrew
-          brew update -q 2>/dev/null || true
-          
-          # Install required packages
-          brew install -q yasm x264 x265 libvpx opus libvorbis theora fdk-aac lame freetype pkg-config || true
+          brew install -q yasm x264 x265 opus libvorbis fdk-aac lame pkg-config
           
           echo "✓ Dependencies installed"
       
@@ -161,8 +148,7 @@ jobs:
         run: |
           set -e
           echo "Downloading FFmpeg source..."
-          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
-            curl -sL https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2 -o ffmpeg-snapshot.tar.bz2
+          wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
           tar -xjf ffmpeg-*.tar.bz2
           mv ffmpeg-* ffmpeg
           echo "✓ FFmpeg source extracted"
@@ -181,13 +167,10 @@ jobs:
             ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
-            --enable-libvpx \
             --enable-libopus \
             --enable-libvorbis \
-            --enable-libtheora \
             --enable-libfdk-aac \
             --enable-libmp3lame \
-            --enable-libfreetype \
             --enable-shared \
             --disable-stripping \
             2>&1 | tee configure.log
@@ -245,17 +228,13 @@ jobs:
   build-windows:
     name: Build on Windows (MinGW)
     runs-on: windows-latest
-    strategy:
-      matrix:
-        arch: [x86_64, i686]
-      fail-fast: false
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
       
       - name: Setup MSYS2
-        uses: msys2/setup-msys2@v4
+        uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
@@ -267,12 +246,9 @@ jobs:
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-x264
             mingw-w64-x86_64-x265
-            mingw-w64-x86_64-libvpx
             mingw-w64-x86_64-opus
             mingw-w64-x86_64-libvorbis
-            mingw-w64-x86_64-libtheora
             mingw-w64-x86_64-lame
-            mingw-w64-x86_64-freetype
             mingw-w64-x86_64-fdk-aac
             wget
       
@@ -281,8 +257,7 @@ jobs:
         run: |
           set -e
           echo "Downloading FFmpeg source..."
-          wget -q https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 || \
-            wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
+          wget -q https://ffmpeg.org/releases/ffmpeg-${{ env.FFMPEG_VERSION }}.tar.bz2
           tar -xjf ffmpeg-*.tar.bz2
           mv ffmpeg-* ffmpeg
           echo "✓ FFmpeg source extracted"
@@ -292,20 +267,17 @@ jobs:
         run: |
           set -e
           cd ffmpeg
-          echo "Configuring FFmpeg for Windows (${{ matrix.arch }})..."
+          echo "Configuring FFmpeg for Windows..."
           
           ./configure \
             --prefix=/mingw64 \
             ${{ env.BUILD_FLAGS }} \
             --enable-libx264 \
             --enable-libx265 \
-            --enable-libvpx \
             --enable-libopus \
             --enable-libvorbis \
-            --enable-libtheora \
             --enable-libfdk-aac \
             --enable-libmp3lame \
-            --enable-libfreetype \
             --enable-shared \
             --disable-stripping \
             2>&1 | tee configure.log
@@ -347,8 +319,8 @@ jobs:
             $files = Get-ChildItem -Path "build-output" -Recurse -File
             if ($files.Count -gt 0) {
               mkdir -p "artifacts" -Force | Out-Null
-              Compress-Archive -Path "build-output\*" -DestinationPath "artifacts\ffmpeg-windows-${{ matrix.arch }}.zip" -Force
-              Write-Host "✓ Windows ${{ matrix.arch }} artifact created"
+              Compress-Archive -Path "build-output\*" -DestinationPath "artifacts\ffmpeg-windows-x86_64.zip" -Force
+              Write-Host "✓ Windows artifact created"
             } else {
               Write-Host "❌ Build output is empty"
               exit 1
@@ -361,8 +333,8 @@ jobs:
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-windows-${{ matrix.arch }}
-          path: artifacts/ffmpeg-windows-${{ matrix.arch }}.zip
+          name: ffmpeg-windows-x86_64
+          path: artifacts/ffmpeg-windows-x86_64.zip
           retention-days: 30
           if-no-files-found: error
 
@@ -395,7 +367,7 @@ jobs:
           fi
       
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: release/*
           draft: false
@@ -432,48 +404,42 @@ jobs:
           set +e
           echo "=== Linux Build Verification ==="
           
-          for arch in x86_64 arm64; do
-            artifact="all-artifacts/ffmpeg-linux-${arch}/ffmpeg-linux-${arch}.tar.gz"
-            if [ -f "$artifact" ]; then
-              size=$(du -h "$artifact" | cut -f1)
-              echo "✓ Linux ${arch} build found (${size})"
-              tar -tzf "$artifact" 2>/dev/null | head -5
-            else
-              echo "⚠ Linux ${arch} build not found"
-            fi
-          done
+          artifact="all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz"
+          if [ -f "$artifact" ]; then
+            size=$(du -h "$artifact" | cut -f1)
+            echo "✓ Linux x86_64 build found (${size})"
+            tar -tzf "$artifact" 2>/dev/null | head -5
+          else
+            echo "⚠ Linux x86_64 build not found"
+          fi
       
       - name: Verify macOS builds
         run: |
           set +e
           echo "=== macOS Build Verification ==="
           
-          for arch in x86_64 arm64; do
-            artifact="all-artifacts/ffmpeg-macos-${arch}/ffmpeg-macos-${arch}.tar.gz"
-            if [ -f "$artifact" ]; then
-              size=$(du -h "$artifact" | cut -f1)
-              echo "✓ macOS ${arch} build found (${size})"
-              tar -tzf "$artifact" 2>/dev/null | head -5
-            else
-              echo "⚠ macOS ${arch} build not found"
-            fi
-          done
+          artifact="all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz"
+          if [ -f "$artifact" ]; then
+            size=$(du -h "$artifact" | cut -f1)
+            echo "✓ macOS x86_64 build found (${size})"
+            tar -tzf "$artifact" 2>/dev/null | head -5
+          else
+            echo "⚠ macOS x86_64 build not found"
+          fi
       
       - name: Verify Windows builds
         run: |
           set +e
           echo "=== Windows Build Verification ==="
           
-          for arch in x86_64 i686; do
-            artifact="all-artifacts/ffmpeg-windows-${arch}/ffmpeg-windows-${arch}.zip"
-            if [ -f "$artifact" ]; then
-              size=$(du -h "$artifact" | cut -f1)
-              echo "✓ Windows ${arch} build found (${size})"
-              unzip -l "$artifact" 2>/dev/null | head -10
-            else
-              echo "⚠ Windows ${arch} build not found"
-            fi
-          done
+          artifact="all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip"
+          if [ -f "$artifact" ]; then
+            size=$(du -h "$artifact" | cut -f1)
+            echo "✓ Windows x86_64 build found (${size})"
+            unzip -l "$artifact" 2>/dev/null | head -10
+          else
+            echo "⚠ Windows x86_64 build not found"
+          fi
       
       - name: Generate summary report
         run: |
@@ -496,39 +462,12 @@ jobs:
             echo "### 🖥️ Platform Build Status"
             echo ""
             
-            platforms=(
-              "Linux:all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz"
-              "macOS:all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz"
-              "Windows:all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip"
-            )
+            linux=$([ -f "all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz" ] && echo "✅" || echo "❌")
+            macos=$([ -f "all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz" ] && echo "✅" || echo "❌")
+            windows=$([ -f "all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip" ] && echo "✅" || echo "❌")
             
-            for platform_info in "${platforms[@]}"; do
-              platform="${platform_info%%:*}"
-              artifact="${platform_info##*:}"
-              
-              if [ -f "$artifact" ]; then
-                size=$(du -h "$artifact" | cut -f1)
-                echo "- **$platform**: ✅ ($size)"
-              else
-                echo "- **$platform**: ❌ (artifact not found)"
-              fi
-            done
-            
-            echo ""
-            echo "### 🏗️ Architecture Support"
-            echo ""
-            echo "| Platform | x86_64 | ARM64 | i686 |"
-            echo "|----------|--------|-------|------|"
-            
-            linux_x86=$([ -f "all-artifacts/ffmpeg-linux-x86_64/ffmpeg-linux-x86_64.tar.gz" ] && echo "✅" || echo "❌")
-            linux_arm=$([ -f "all-artifacts/ffmpeg-linux-arm64/ffmpeg-linux-arm64.tar.gz" ] && echo "✅" || echo "❌")
-            macos_x86=$([ -f "all-artifacts/ffmpeg-macos-x86_64/ffmpeg-macos-x86_64.tar.gz" ] && echo "✅" || echo "❌")
-            macos_arm=$([ -f "all-artifacts/ffmpeg-macos-arm64/ffmpeg-macos-arm64.tar.gz" ] && echo "✅" || echo "❌")
-            win_x86=$([ -f "all-artifacts/ffmpeg-windows-x86_64/ffmpeg-windows-x86_64.zip" ] && echo "✅" || echo "❌")
-            win_i686=$([ -f "all-artifacts/ffmpeg-windows-i686/ffmpeg-windows-i686.zip" ] && echo "✅" || echo "❌")
-            
-            echo "| Linux    | $linux_x86 | $linux_arm | - |"
-            echo "| macOS    | $macos_x86 | $macos_arm | - |"
-            echo "| Windows  | $win_x86 | - | $win_i686 |"
+            echo "- **Linux (x86_64)**: $linux"
+            echo "- **macOS (x86_64)**: $macos"
+            echo "- **Windows (x86_64)**: $windows"
             
           } >> $GITHUB_STEP_SUMMARY
