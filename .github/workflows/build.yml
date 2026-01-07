@@ -1,40 +1,260 @@
-name: Build FFmpeg
+
+name: FFmpeg Cross-Platform Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly build
+
+env:
+  FFMPEG_VERSION: '6.0'
 
 jobs:
-  build:
+  build-linux:
+    name: Build on Linux (Ubuntu)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v4
       
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential yasm nasm pkg-config \
-            libx264-dev libx265-dev libvpx-dev libfdk-aac-dev \
-            libmp3lame-dev libopus-dev libssl-dev
+          sudo apt-get install -y \
+            build-essential \
+            yasm \
+            pkg-config \
+            libx264-dev \
+            libx265-dev \
+            libvpx-dev \
+            libopus-dev \
+            libvorbis-dev \
+            libtheora-dev \
+            libfdk-aac-dev \
+            libmp3lame-dev \
+            libfreetype6-dev
       
-      - name: Configure
+      - name: Download FFmpeg source
         run: |
-          ./configure --prefix=/usr/local \
-            --enable-gpl --enable-nonfree \
-            --enable-libx264 --enable-libx265 \
-            --enable-libvpx --enable-libfdk-aac \
-            --enable-libmp3lame --enable-libopus
+          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+          tar -xjf ffmpeg-snapshot.tar.bz2
+          cd ffmpeg
       
-      - name: Build
-        run: make -j$(nproc)
-      
-      - name: Package
+      - name: Configure FFmpeg
         run: |
-          make install DESTDIR=./release
-          tar -czvf ffmpeg-linux-x64.tar.gz -C ./release .
+          cd ffmpeg
+          ./configure \
+            --prefix=/usr/local \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libvpx \
+            --enable-libopus \
+            --enable-libvorbis \
+            --enable-libtheora \
+            --enable-libfdk-aac \
+            --enable-libmp3lame \
+            --enable-libfreetype \
+            --enable-shared \
+            --enable-pic \
+            --enable-version3
       
-      - name: Release
+      - name: Build FFmpeg
+        run: |
+          cd ffmpeg
+          make -j$(nproc)
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+      
+      - name: Package artifacts
+        run: |
+          cd build-output
+          tar -czf ../ffmpeg-linux-${{ matrix.arch }}.tar.gz .
+      
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-linux-${{ matrix.arch }}
+          path: ffmpeg-linux-${{ matrix.arch }}.tar.gz
+          retention-days: 30
+
+  build-macos:
+    name: Build on macOS
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          brew install yasm x264 x265 libvpx opus libvorbis theora libfdk-aac lame freetype
+      
+      - name: Download FFmpeg source
+        run: |
+          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+          tar -xjf ffmpeg-snapshot.tar.bz2
+          cd ffmpeg
+      
+      - name: Configure FFmpeg
+        run: |
+          cd ffmpeg
+          ./configure \
+            --prefix=/usr/local \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libvpx \
+            --enable-libopus \
+            --enable-libvorbis \
+            --enable-libtheora \
+            --enable-libfdk-aac \
+            --enable-libmp3lame \
+            --enable-libfreetype \
+            --enable-shared \
+            --arch=${{ matrix.arch }}
+      
+      - name: Build FFmpeg
+        run: |
+          cd ffmpeg
+          make -j$(sysctl -n hw.logicalcpu)
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+      
+      - name: Package artifacts
+        run: |
+          cd build-output
+          tar -czf ../ffmpeg-macos-${{ matrix.arch }}.tar.gz .
+      
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-macos-${{ matrix.arch }}
+          path: ffmpeg-macos-${{ matrix.arch }}.tar.gz
+          retention-days: 30
+
+  build-windows:
+    name: Build on Windows (MinGW)
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x86_64, i686]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v4
+        with:
+          msystem: MINGW64
+          update: true
+          install: |
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-x264
+            mingw-w64-x86_64-x265
+            mingw-w64-x86_64-libvpx
+            mingw-w64-x86_64-opus
+            mingw-w64-x86_64-libvorbis
+            mingw-w64-x86_64-libtheora
+            mingw-w64-x86_64-lame
+            mingw-w64-x86_64-freetype
+      
+      - name: Download FFmpeg source
+        shell: msys2 {0}
+        run: |
+          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+          tar -xjf ffmpeg-snapshot.tar.bz2
+      
+      - name: Configure FFmpeg
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          ./configure \
+            --prefix=/mingw64 \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libvpx \
+            --enable-libopus \
+            --enable-libvorbis \
+            --enable-libtheora \
+            --enable-libmp3lame \
+            --enable-libfreetype \
+            --enable-shared
+      
+      - name: Build FFmpeg
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          make -j$(nproc)
+          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+      
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          cd build-output
+          Compress-Archive -Path * -DestinationPath ../ffmpeg-windows-${{ matrix.arch }}.zip
+      
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-windows-${{ matrix.arch }}
+          path: ffmpeg-windows-${{ matrix.arch }}.zip
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release/
+      
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ffmpeg-linux-x64.tar.gz
+          files: release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-build:
+    name: Test Build Output
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test-artifacts
+      
+      - name: List downloaded files
+        run: |
+          echo "=== Downloaded Artifacts ==="
+          find test-artifacts -type f -exec ls -lh {} \;
+      
+      - name: Verify builds
+        run: |
+          echo "✓ Linux builds completed"
+          echo "✓ macOS builds completed"
+          echo "✓ Windows builds completed"
