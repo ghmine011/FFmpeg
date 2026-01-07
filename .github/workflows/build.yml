@@ -11,7 +11,7 @@ on:
 
 env:
   FFMPEG_VERSION: '6.0'
-  BUILD_FLAGS: '--enable-nonfree --enable-gpl --enable-version3'
+  BUILD_FLAGS: '--enable-nonfree --enable-gpl --enable-version3 --disable-doc'
 
 jobs:
   build-linux:
@@ -84,23 +84,49 @@ jobs:
       - name: Install FFmpeg
         run: |
           set -e
-          mkdir -p "${GITHUB_WORKSPACE}/build-output"
-          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
+          mkdir -p "${BUILD_OUTPUT_DIR}"
+          echo "Installing to: ${BUILD_OUTPUT_DIR}"
+          
+          make install DESTDIR="${BUILD_OUTPUT_DIR}" 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Installation failed"
+            exit 1
+          fi
           echo "✓ Installation completed"
+          echo "BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR}" >> $GITHUB_ENV
+      
+      - name: Verify installation
+        run: |
+          set -e
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
+          echo "Verifying installation in: ${BUILD_OUTPUT_DIR}"
+          
+          if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
+            echo "❌ Build output directory not found"
+            exit 1
+          fi
+          
+          file_count=$(find "${BUILD_OUTPUT_DIR}" -type f | wc -l)
+          if [ $file_count -eq 0 ]; then
+            echo "❌ Build output is empty"
+            exit 1
+          fi
+          
+          echo "✓ Installation verified: ${file_count} files"
+          echo "Directory structure:"
+          find "${BUILD_OUTPUT_DIR}" -type f | head -20
       
       - name: Create artifacts
         run: |
           set -e
           mkdir -p artifacts
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
           
-          if [ -d "${GITHUB_WORKSPACE}/build-output" ] && [ -n "$(find ${GITHUB_WORKSPACE}/build-output -type f)" ]; then
-            cd "${GITHUB_WORKSPACE}/build-output"
-            tar -czf "../artifacts/ffmpeg-linux-${{ matrix.arch }}.tar.gz" .
-            echo "✓ Linux ${{ matrix.arch }} artifact created"
-          else
-            echo "❌ Build output is empty"
-            exit 1
-          fi
+          cd "${BUILD_OUTPUT_DIR}"
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-linux-${{ matrix.arch }}.tar.gz" .
+          echo "✓ Linux ${{ matrix.arch }} artifact created"
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -174,23 +200,49 @@ jobs:
       - name: Install FFmpeg
         run: |
           set -e
-          mkdir -p "${GITHUB_WORKSPACE}/build-output"
-          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
+          mkdir -p "${BUILD_OUTPUT_DIR}"
+          echo "Installing to: ${BUILD_OUTPUT_DIR}"
+          
+          make install DESTDIR="${BUILD_OUTPUT_DIR}" 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Installation failed"
+            exit 1
+          fi
           echo "✓ Installation completed"
+          echo "BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR}" >> $GITHUB_ENV
+      
+      - name: Verify installation
+        run: |
+          set -e
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
+          echo "Verifying installation in: ${BUILD_OUTPUT_DIR}"
+          
+          if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
+            echo "❌ Build output directory not found"
+            exit 1
+          fi
+          
+          file_count=$(find "${BUILD_OUTPUT_DIR}" -type f | wc -l)
+          if [ $file_count -eq 0 ]; then
+            echo "❌ Build output is empty"
+            exit 1
+          fi
+          
+          echo "✓ Installation verified: ${file_count} files"
+          echo "Directory structure:"
+          find "${BUILD_OUTPUT_DIR}" -type f | head -20
       
       - name: Create artifacts
         run: |
           set -e
           mkdir -p artifacts
+          BUILD_OUTPUT_DIR="$(cd "${{ github.workspace }}" && pwd)/build-output"
           
-          if [ -d "${GITHUB_WORKSPACE}/build-output" ] && [ -n "$(find ${GITHUB_WORKSPACE}/build-output -type f)" ]; then
-            cd "${GITHUB_WORKSPACE}/build-output"
-            tar -czf "../artifacts/ffmpeg-macos-${{ matrix.arch }}.tar.gz" .
-            echo "✓ macOS ${{ matrix.arch }} artifact created"
-          else
-            echo "❌ Build output is empty"
-            exit 1
-          fi
+          cd "${BUILD_OUTPUT_DIR}"
+          tar -czf "${{ github.workspace }}/artifacts/ffmpeg-macos-${{ matrix.arch }}.tar.gz" .
+          echo "✓ macOS ${{ matrix.arch }} artifact created"
       
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -269,20 +321,52 @@ jobs:
         shell: msys2 {0}
         run: |
           set -e
-          mkdir -p "${GITHUB_WORKSPACE}/build-output"
-          make install DESTDIR="${GITHUB_WORKSPACE}/build-output"
+          BUILD_OUTPUT_DIR="$(cd '${{ github.workspace }}' && pwd)/build-output"
+          mkdir -p "${BUILD_OUTPUT_DIR}"
+          echo "Installing to: ${BUILD_OUTPUT_DIR}"
+          
+          make install DESTDIR="${BUILD_OUTPUT_DIR}" 2>&1 | tail -20
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Installation failed"
+            exit 1
+          fi
           echo "✓ Installation completed"
+          echo "BUILD_OUTPUT_DIR=${BUILD_OUTPUT_DIR}" >> $GITHUB_ENV
+      
+      - name: Verify installation
+        shell: msys2 {0}
+        run: |
+          set -e
+          BUILD_OUTPUT_DIR="$(cd '${{ github.workspace }}' && pwd)/build-output"
+          echo "Verifying installation in: ${BUILD_OUTPUT_DIR}"
+          
+          if [ ! -d "${BUILD_OUTPUT_DIR}" ]; then
+            echo "❌ Build output directory not found"
+            exit 1
+          fi
+          
+          file_count=$(find "${BUILD_OUTPUT_DIR}" -type f | wc -l)
+          if [ $file_count -eq 0 ]; then
+            echo "❌ Build output is empty"
+            exit 1
+          fi
+          
+          echo "✓ Installation verified: ${file_count} files"
+          echo "Directory structure:"
+          find "${BUILD_OUTPUT_DIR}" -type f | head -20
       
       - name: Create artifacts
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $buildOutputDir = "${{ github.workspace }}\build-output"
           
-          if (Test-Path "build-output") {
-            $files = Get-ChildItem -Path "build-output" -Recurse -File
+          if (Test-Path $buildOutputDir) {
+            $files = Get-ChildItem -Path $buildOutputDir -Recurse -File
             if ($files.Count -gt 0) {
               mkdir -p "artifacts" -Force | Out-Null
-              Compress-Archive -Path "build-output\*" -DestinationPath "artifacts\ffmpeg-windows-x86_64.zip" -Force
+              Compress-Archive -Path "$buildOutputDir\*" -DestinationPath "${{ github.workspace }}\artifacts\ffmpeg-windows-x86_64.zip" -Force
               Write-Host "✓ Windows artifact created"
             } else {
               Write-Host "❌ Build output is empty"
