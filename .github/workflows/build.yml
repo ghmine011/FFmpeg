@@ -245,7 +245,7 @@ jobs:
           msystem: MINGW64
           update: true
           install: >
-            base-devel mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+            base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-make
             mingw-w64-x86_64-nasm mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-x264 mingw-w64-x86_64-x265
             mingw-w64-x86_64-opus mingw-w64-x86_64-libvorbis
