@@ -50,8 +50,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: linux-configure-logs
@@ -97,11 +97,14 @@ jobs:
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+          LAME_PREFIX=$(brew --prefix lame)
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "CFLAGS=-I${LAME_PREFIX}/include" >> $GITHUB_ENV
+          echo "LDFLAGS=-L${LAME_PREFIX}/lib" >> $GITHUB_ENV
 
       - name: Configure FFmpeg
         run: |
           set -e
-          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
           ./configure \
             --prefix=/usr/local \
             --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
@@ -120,8 +123,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: macos-x86_64-configure-logs
@@ -167,11 +170,14 @@ jobs:
         run: |
           set -e
           brew install nasm x264 x265 opus libvorbis fdk-aac lame pkg-config
+          LAME_PREFIX=$(brew --prefix lame)
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "CFLAGS=-I${LAME_PREFIX}/include" >> $GITHUB_ENV
+          echo "LDFLAGS=-L${LAME_PREFIX}/lib" >> $GITHUB_ENV
 
       - name: Configure FFmpeg
         run: |
           set -e
-          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$PKG_CONFIG_PATH"
           ./configure \
             --prefix=/usr/local \
             --enable-nonfree --enable-gpl --enable-version3 --disable-doc \
@@ -190,8 +196,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-configure-logs
@@ -239,7 +245,7 @@ jobs:
           msystem: MINGW64
           update: true
           install: >
-            base-devel mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+            base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-make
             mingw-w64-x86_64-nasm mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-x264 mingw-w64-x86_64-x265
             mingw-w64-x86_64-opus mingw-w64-x86_64-libvorbis
@@ -268,8 +274,8 @@ jobs:
             exit 1
           fi
 
-      - name: Upload configure logs on failure
-        if: failure()
+      - name: Upload configure logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-configure-logs
